@@ -5,7 +5,11 @@ Working with Large Language Models.
 """
 
 # pylint: disable=too-few-public-methods, undefined-variable, too-many-arguments, super-init-not-called
-from typing import Iterable, Sequence
+from datasets import load_dataset
+import pandas as pd
+from core_utils.llm.raw_data_importer import AbstractRawDataImporter
+from core_utils.llm.raw_data_preprocessor import ColumnNames, AbstractRawDataPreprocessor
+from core_utils.llm.time_decorator import report_time
 
 
 class RawDataImporter(AbstractRawDataImporter):
@@ -21,6 +25,11 @@ class RawDataImporter(AbstractRawDataImporter):
         Raises:
             TypeError: In case of downloaded dataset is not pd.DataFrame
         """
+        dataset = load_dataset(self._hf_name, split='test')
+        self._raw_data = pd.DataFrame(dataset)
+
+        if not isinstance(self._raw_data, pd.DataFrame):
+            raise TypeError("Downloaded dataset is not pd.DataFrame")
 
 
 class RawDataPreprocessor(AbstractRawDataPreprocessor):
@@ -35,12 +44,27 @@ class RawDataPreprocessor(AbstractRawDataPreprocessor):
         Returns:
             dict: Dataset key properties
         """
+        df_copy = self._raw_data.copy()
+        df_copy = df_copy.dropna(subset=['en'])
+
+        return {
+            'dataset_number_of_samples': len(self._raw_data),
+            'dataset_columns': len(self._raw_data.columns),
+            'dataset_duplicates': self._raw_data.duplicated().sum(),
+            'dataset_empty_rows': self._raw_data.isna().sum().sum(),
+            'dataset_sample_min_len': df_copy.en.map(len).min(),
+            'dataset_sample_max_len': df_copy.en.map(len).max()
+        }
 
     @report_time
     def transform(self) -> None:
         """
         Apply preprocessing transformations to the raw dataset.
         """
+        self._data = self._raw_data.copy()
+        self._data = self._data.rename(columns={'en': ColumnNames.SOURCE, 'fr': ColumnNames.TARGET})
+        self._data = self._data.drop_duplicates(subset=[ColumnNames.SOURCE])
+        self._data = self._data.reset_index(drop=True)
 
 
 class TaskDataset(Dataset):
