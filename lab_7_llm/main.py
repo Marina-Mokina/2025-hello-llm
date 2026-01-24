@@ -61,7 +61,7 @@ class RawDataPreprocessor(AbstractRawDataPreprocessor):
             'dataset_number_of_samples': len(self._raw_data),
             'dataset_columns': len(self._raw_data.columns),
             'dataset_duplicates': int(self._raw_data.duplicated().sum()),
-            'dataset_empty_rows': int(self._raw_data.isna().sum().sum()),
+            'dataset_empty_rows': int(self._raw_data.isna().sum()),
             'dataset_sample_min_len': df_copy.en.map(len).min(),
             'dataset_sample_max_len': df_copy.en.map(len).max()
         }
