@@ -5,10 +5,20 @@ Working with Large Language Models.
 """
 
 # pylint: disable=too-few-public-methods, undefined-variable, too-many-arguments, super-init-not-called
-from datasets import load_dataset
+from pathlib import Path
+from typing import Iterable, Sequence
+import evaluate
 import pandas as pd
+import torch
+from datasets import load_dataset
+from torch.utils.data import Dataset, DataLoader
+from torchinfo import summary
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+from core_utils.llm.llm_pipeline import AbstractLLMPipeline
+from core_utils.llm.metrics import Metrics
 from core_utils.llm.raw_data_importer import AbstractRawDataImporter
-from core_utils.llm.raw_data_preprocessor import ColumnNames, AbstractRawDataPreprocessor
+from core_utils.llm.raw_data_preprocessor import AbstractRawDataPreprocessor, ColumnNames
+from core_utils.llm.task_evaluator import AbstractTaskEvaluator
 from core_utils.llm.time_decorator import report_time
 
 
@@ -50,8 +60,8 @@ class RawDataPreprocessor(AbstractRawDataPreprocessor):
         return {
             'dataset_number_of_samples': len(self._raw_data),
             'dataset_columns': len(self._raw_data.columns),
-            'dataset_duplicates': self._raw_data.duplicated().sum(),
-            'dataset_empty_rows': self._raw_data.isna().sum().sum(),
+            'dataset_duplicates': int(self._raw_data.duplicated().sum()),
+            'dataset_empty_rows': int(self._raw_data.isna().sum().sum()),
             'dataset_sample_min_len': df_copy.en.map(len).min(),
             'dataset_sample_max_len': df_copy.en.map(len).max()
         }
@@ -79,6 +89,7 @@ class TaskDataset(Dataset):
         Args:
             data (pandas.DataFrame): Original data
         """
+        self._data = data
 
     def __len__(self) -> int:
         """
@@ -87,6 +98,7 @@ class TaskDataset(Dataset):
         Returns:
             int: The number of items in the dataset
         """
+        return len(self._data)
 
     def __getitem__(self, index: int) -> tuple[str, ...]:
         """
@@ -98,15 +110,18 @@ class TaskDataset(Dataset):
         Returns:
             tuple[str, ...]: The item to be received
         """
+        row = self._data.iloc[index]
+        return str(row[ColumnNames.SOURCE]), str(row[ColumnNames.TARGET])
 
     @property
-    def data(self) -> DataFrame:
+    def data(self) -> pd.DataFrame:
         """
         Property with access to preprocessed DataFrame.
 
         Returns:
             pandas.DataFrame: Preprocessed DataFrame
         """
+        return self._data
 
 
 class LLMPipeline(AbstractLLMPipeline):
@@ -127,6 +142,10 @@ class LLMPipeline(AbstractLLMPipeline):
             batch_size (int): The size of the batch inside DataLoader
             device (str): The device for inference
         """
+        super().__init__(model_name, dataset, max_length, batch_size, device)
+        self._tokenizer = AutoTokenizer.from_pretrained(model_name, model_max_length=max_length)
+        self._model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+        self._model.to(self._device)
 
     def analyze_model(self) -> dict:
         """

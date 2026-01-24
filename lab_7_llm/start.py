@@ -3,8 +3,9 @@ Starter for demonstration of laboratory work.
 """
 
 # pylint: disable=too-many-locals, undefined-variable, unused-import
-import json
+from pathlib import Path
 from lab_7_llm.main import report_time, RawDataImporter, RawDataPreprocessor
+from config.lab_settings import LabSettings
 
 
 @report_time
@@ -12,12 +13,9 @@ def main() -> None:
     """
     Run the translation pipeline.
     """
-    with open('settings.json', 'r', encoding='utf-8') as f:
-        settings = json.load(f)
+    settings = LabSettings(Path(__file__).parent / "settings.json")
 
-    dataset_name = settings["parameters"]["dataset"]
-
-    importer = RawDataImporter(dataset_name)
+    importer = RawDataImporter(settings.parameters.dataset)
     importer.obtain()
 
     preprocessor = RawDataPreprocessor(importer.raw_data)

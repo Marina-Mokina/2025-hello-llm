@@ -2,7 +2,7 @@
   "parameters": {
     "model": "Helsinki-NLP/opus-mt-en-fr",
     "dataset": "enimai/MuST-C-fr",
-    "metrics": "bleu"
+    "metrics": ["bleu"]
   },
   "target_score": 4
 }
