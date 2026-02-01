@@ -35,8 +35,7 @@ class RawDataImporter(AbstractRawDataImporter):
         Raises:
             TypeError: In case of downloaded dataset is not pd.DataFrame
         """
-        dataset = load_dataset(self._hf_name, split='test')
-        self._raw_data = pd.DataFrame(dataset)
+        self._raw_data = load_dataset(self._hf_name, split='test').to_pandas()
 
         if not isinstance(self._raw_data, pd.DataFrame):
             raise TypeError("Downloaded dataset is not pd.DataFrame")
@@ -61,7 +60,7 @@ class RawDataPreprocessor(AbstractRawDataPreprocessor):
             'dataset_number_of_samples': len(self._raw_data),
             'dataset_columns': len(self._raw_data.columns),
             'dataset_duplicates': int(self._raw_data.duplicated().sum()),
-            'dataset_empty_rows': int(self._raw_data.isna().sum()),
+            'dataset_empty_rows': int(self._raw_data.isna().sum().sum()),
             'dataset_sample_min_len': df_copy.en.map(len).min(),
             'dataset_sample_max_len': df_copy.en.map(len).max()
         }
@@ -146,6 +145,7 @@ class LLMPipeline(AbstractLLMPipeline):
         self._tokenizer = AutoTokenizer.from_pretrained(model_name, model_max_length=max_length)
         self._model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
         self._model.to(self._device)
+        self._model.eval()
 
     def analyze_model(self) -> dict:
         """
@@ -154,6 +154,20 @@ class LLMPipeline(AbstractLLMPipeline):
         Returns:
             dict: Properties of a model
         """
+        embeddings_length = self._model.config.max_position_embeddings
+        ids = torch.ones(1, embeddings_length, dtype=torch.long)
+        tokens = {"input_ids": ids, "decoder_input_ids": ids}
+
+        result = summary(self._model, input_data=tokens, device=self._device, verbose=0)
+
+        return({'input_shape': list(result.input_size['input_ids']),
+                'embedding_size': self._model.config.d_model,
+                'output_shape': result.summary_list[-1].output_size,
+                'num_trainable_params': result.trainable_params,
+                'vocab_size': self._model.config.vocab_size,
+                'size': result.total_param_bytes,
+                'max_context_length': self._model.config.max_length})
+
 
     @report_time
     def infer_sample(self, sample: tuple[str, ...]) -> str | None:
@@ -166,6 +180,12 @@ class LLMPipeline(AbstractLLMPipeline):
         Returns:
             str | None: A prediction
         """
+        tokens = self._tokenizer(sample[0], return_tensors="pt", padding=True, truncation=True)
+
+        with torch.no_grad():
+            output = self._model.generate(**tokens)
+
+        return self._tokenizer.decode(output[0], skip_special_tokens=True)
 
     @report_time
     def infer_dataset(self) -> pd.DataFrame:

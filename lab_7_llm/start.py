@@ -4,9 +4,9 @@ Starter for demonstration of laboratory work.
 
 # pylint: disable=too-many-locals, undefined-variable, unused-import
 from pathlib import Path
+import json
 from core_utils.llm.time_decorator import report_time
-from lab_7_llm.main import RawDataImporter, RawDataPreprocessor
-from config.lab_settings import LabSettings
+from lab_7_llm.main import RawDataImporter, RawDataPreprocessor, TaskDataset, LLMPipeline
 
 
 @report_time
@@ -14,9 +14,10 @@ def main() -> None:
     """
     Run the translation pipeline.
     """
-    settings = LabSettings(Path(__file__).parent / "settings.json")
+    with open(Path(__file__).parent / 'settings.json', 'r', encoding='utf-8') as f:
+        settings = json.load(f)
 
-    importer = RawDataImporter(settings.parameters.dataset)
+    importer = RawDataImporter(settings['parameters']['dataset'])
     importer.obtain()
 
     preprocessor = RawDataPreprocessor(importer.raw_data)
@@ -25,6 +26,16 @@ def main() -> None:
 
     for key, value in result.items():
         print(f"{key}: {value}")
+
+    preprocessor.transform()
+    dataset = TaskDataset(preprocessor.data.head(100))
+
+    pipeline = LLMPipeline(settings['parameters']['model'], dataset, 120, 1, 'cpu')
+
+    for key, value in pipeline.analyze_model().items():
+        print(f'{key}: {value}')
+
+    print(pipeline.infer_sample(dataset[1]))
 
     assert result is not None, "Demo does not work correctly"
 
