@@ -73,8 +73,8 @@ class RawDataPreprocessor(AbstractRawDataPreprocessor):
         Apply preprocessing transformations to the raw dataset.
         """
         self._data = self._raw_data.copy()
-        self._data = self._data.rename(columns={'en': ColumnNames.SOURCE, 'fr': ColumnNames.TARGET})
-        self._data = self._data.drop_duplicates(subset=[ColumnNames.SOURCE])
+        self._data = self._data.rename(columns={'en': ColumnNames.SOURCE.value, 'fr': ColumnNames.TARGET.value})
+        self._data = self._data.drop_duplicates(subset=[ColumnNames.SOURCE.value])
         self._data = self._data.reset_index(drop=True)
 
 
@@ -112,7 +112,7 @@ class TaskDataset(Dataset):
             tuple[str, ...]: The item to be received
         """
         row = self._data.iloc[index]
-        return str(row[ColumnNames.SOURCE]), str(row[ColumnNames.TARGET])
+        return str(row[ColumnNames.SOURCE.value]), str(row[ColumnNames.TARGET.value])
 
     @property
     def data(self) -> pd.DataFrame:
@@ -162,13 +162,15 @@ class LLMPipeline(AbstractLLMPipeline):
 
         result = summary(self._model, input_data=tokens, device=self._device, verbose=0)
 
-        return({'input_shape': list(result.input_size['input_ids']),
-                'embedding_size': self._model.config.d_model,
-                'output_shape': result.summary_list[-1].output_size,
-                'num_trainable_params': result.trainable_params,
-                'vocab_size': self._model.config.vocab_size,
-                'size': result.total_param_bytes,
-                'max_context_length': self._model.config.max_length})
+        return({
+            'input_shape': list(result.input_size['input_ids']),
+            'embedding_size': self._model.config.d_model,
+            'output_shape': result.summary_list[-1].output_size,
+            'num_trainable_params': result.trainable_params,
+            'vocab_size': self._model.config.vocab_size,
+            'size': result.total_param_bytes,
+            'max_context_length': self._model.config.max_length
+        })
 
 
     @report_time
@@ -201,7 +203,7 @@ class LLMPipeline(AbstractLLMPipeline):
             predictions.extend(self._infer_batch(sources))
             references.extend(targets)
 
-        return pd.DataFrame({"target": references, "prediction": predictions})
+        return pd.DataFrame({ColumnNames.TARGET.value: references, ColumnNames.PREDICTION.value: predictions})
 
     @torch.no_grad()
     def _infer_batch(self, sample_batch: Sequence[tuple[str, ...]]) -> list[str]:
@@ -214,9 +216,12 @@ class LLMPipeline(AbstractLLMPipeline):
         Returns:
             list[str]: Model predictions as strings
         """
-        return [self._tokenizer.decode(self._model.generate(**self._tokenizer(source,
-                return_tensors="pt", padding=True, truncation=True))[0], skip_special_tokens=True)
-                for source in sample_batch]
+        return [
+            self._tokenizer.decode(
+                self._model.generate(**self._tokenizer(
+                    source, return_tensors="pt", padding=True, truncation=True))[0], skip_special_tokens=True)
+            for source in sample_batch
+        ]
 
 
 class TaskEvaluator(AbstractTaskEvaluator):
@@ -244,8 +249,9 @@ class TaskEvaluator(AbstractTaskEvaluator):
         """
         data = pd.read_csv(self._data_path)
 
-        return {metric.value: evaluate.load(metric.value).compute(
-                predictions=data["prediction"].tolist(),
-                references=data["target"].tolist())["bleu"]
-                for metric in self._metrics
-                }
+        return {
+            metric.value: evaluate.load(metric.value).compute(
+                predictions=data[ColumnNames.PREDICTION.value],
+                references=data[ColumnNames.TARGET.value])["bleu"]
+            for metric in self._metrics
+        }
