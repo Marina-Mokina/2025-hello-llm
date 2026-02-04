@@ -28,6 +28,8 @@ def main() -> None:
 
     importer = RawDataImporter(settings['parameters']['dataset'])
     importer.obtain()
+    if not importer.raw_data:
+        return
 
     preprocessor = RawDataPreprocessor(importer.raw_data)
 
@@ -39,7 +41,7 @@ def main() -> None:
     preprocessor.transform()
     dataset = TaskDataset(preprocessor.data.head(100))
 
-    pipeline = LLMPipeline(settings['parameters']['model'], dataset, 120, 2, 'cpu')
+    pipeline = LLMPipeline(settings['parameters']['model'], dataset, 120, 64, 'cpu')
 
     predictions_path = BASE_PATH / 'dist' / 'predictions.csv'
 

@@ -156,6 +156,9 @@ class LLMPipeline(AbstractLLMPipeline):
         Returns:
             dict: Properties of a model
         """
+        if not self._model:
+            return {}
+
         embeddings_length = self._model.config.max_position_embeddings
         ids = torch.ones(1, embeddings_length, dtype=torch.long)
         tokens = {"input_ids": ids, "decoder_input_ids": ids}
