@@ -160,8 +160,8 @@ class LLMPipeline(AbstractLLMPipeline):
         if not isinstance(self._model, torch.nn.Module):
             return {}
 
-        max_position_embeddings = self._model.config.max_position_embeddings
-        ids = torch.ones((1, max_position_embeddings), dtype=torch.long)
+        ids = torch.ones((1, self._model.config.d_model),
+                         dtype=torch.long, device=self._device)
         tokens = {"input_ids": ids, "decoder_input_ids": ids}
 
         result = summary(self._model, input_data=tokens, device=self._device, verbose=0)
