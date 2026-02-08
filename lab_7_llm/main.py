@@ -220,12 +220,13 @@ class LLMPipeline(AbstractLLMPipeline):
         Returns:
             list[str]: Model predictions as strings
         """
-        return [
-            self._tokenizer.decode(self._model.generate(**self._tokenizer(
-                source, return_tensors="pt", padding=True, truncation=True))[0],
-                                   skip_special_tokens=True)
-            for source in sample_batch
-        ]
+        inputs = self._tokenizer(sample_batch[0], return_tensors="pt", padding=True,
+                                 truncation=True, max_length=self._max_length)
+
+        generated_ids = self._model.generate(**inputs, max_length=self._max_length)
+
+        return [str(text) for text in self._tokenizer.batch_decode(generated_ids,
+                                                                   skip_special_tokens=True)]
 
 
 class TaskEvaluator(AbstractTaskEvaluator):
@@ -256,6 +257,6 @@ class TaskEvaluator(AbstractTaskEvaluator):
         return {
             metric.value: evaluate.load(metric.value).compute(
                 predictions=data[ColumnNames.PREDICTION.value],
-                references=data[ColumnNames.TARGET.value])["bleu"]
+                references=data[ColumnNames.TARGET.value])[metric.value]
             for metric in self._metrics
         }

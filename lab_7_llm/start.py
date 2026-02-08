@@ -40,7 +40,7 @@ def main() -> None:
     preprocessor.transform()
     dataset = TaskDataset(preprocessor.data.head(100))
 
-    pipeline = LLMPipeline(settings['parameters']['model'], dataset, 120, 1, 'cpu')
+    pipeline = LLMPipeline(settings['parameters']['model'], dataset, 120, 64, 'cpu')
 
     predictions_path = BASE_PATH / 'dist' / 'predictions.csv'
     predictions_path.parent.mkdir(parents=True, exist_ok=True)
