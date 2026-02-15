@@ -5,7 +5,24 @@ Fine-tuning Large Language Models for a downstream task.
 """
 
 # pylint: disable=too-few-public-methods, undefined-variable, duplicate-code, unused-argument, too-many-arguments
+from pathlib import Path
 from typing import Callable, Iterable, Sequence
+
+import pandas as pd
+import torch
+from datasets import load_dataset
+from torch.utils.data import Dataset
+from torchinfo import summary
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+from core_utils.llm.llm_pipeline import AbstractLLMPipeline
+from core_utils.llm.metrics import Metrics
+from core_utils.llm.raw_data_importer import AbstractRawDataImporter
+from core_utils.llm.raw_data_preprocessor import AbstractRawDataPreprocessor, ColumnNames
+from core_utils.llm.sft_pipeline import AbstractSFTPipeline
+from core_utils.llm.task_evaluator import AbstractTaskEvaluator
+from core_utils.llm.time_decorator import report_time
+from core_utils.project.lab_settings import SFTParams
 
 
 class RawDataImporter(AbstractRawDataImporter):
@@ -18,6 +35,10 @@ class RawDataImporter(AbstractRawDataImporter):
         """
         Import dataset.
         """
+        self._raw_data = load_dataset(self._hf_name, split='train').to_pandas()
+
+        if not isinstance(self._raw_data, pd.DataFrame):
+            raise TypeError("Downloaded dataset is not pd.DataFrame")
 
 
 class RawDataPreprocessor(AbstractRawDataPreprocessor):
@@ -32,12 +53,28 @@ class RawDataPreprocessor(AbstractRawDataPreprocessor):
         Returns:
             dict: dataset key properties.
         """
+        text_lengths = self._raw_data.content.dropna().str.len()
+
+        return {
+            'dataset_number_of_samples': len(self._raw_data),
+            'dataset_columns': len(self._raw_data.columns),
+            'dataset_duplicates': int(self._raw_data.duplicated().sum()),
+            'dataset_empty_rows': self._raw_data.isna().any(axis=1).sum(),
+            'dataset_sample_min_len': int(text_lengths.min()),
+            'dataset_sample_max_len': int(text_lengths.max())
+        }
 
     @report_time
     def transform(self) -> None:
         """
         Apply preprocessing transformations to the raw dataset.
         """
+        self._data = self._raw_data.copy().rename(columns={'content': ColumnNames.SOURCE.value,
+                                                           'grade3': ColumnNames.TARGET.value})
+        self._data = self._data.dropna()
+        self._data[ColumnNames.TARGET.value] = self._data[ColumnNames.TARGET.value].map({'neutral': 0,
+                                                                                         'positive': 1, 'negative': 2})
+        self._data = self._data.reset_index(drop=True)
 
 
 class TaskDataset(Dataset):
@@ -52,6 +89,7 @@ class TaskDataset(Dataset):
         Args:
             data (pandas.DataFrame): Original data
         """
+        self._data = data
 
     def __len__(self) -> int:
         """
@@ -60,6 +98,7 @@ class TaskDataset(Dataset):
         Returns:
             int: The number of items in the dataset
         """
+        return len(self._data)
 
     def __getitem__(self, index: int) -> tuple[str, ...]:
         """
@@ -71,15 +110,18 @@ class TaskDataset(Dataset):
         Returns:
             tuple[str, ...]: The item to be received
         """
+        row = self._data.iloc[index]
+        return row[ColumnNames.SOURCE.value], row[ColumnNames.TARGET.value]
 
     @property
-    def data(self) -> DataFrame:
+    def data(self) -> pd.DataFrame:
         """
         Property with access to preprocessed DataFrame.
 
         Returns:
             pandas.DataFrame: Preprocessed DataFrame
         """
+        return self._data
 
 
 def tokenize_sample(
@@ -97,6 +139,7 @@ def tokenize_sample(
     Returns:
         dict[str, torch.Tensor]: Tokenized sample
     """
+    return tokenizer(sample, return_tensors="pt", padding="max_length", truncation=True, max_length=max_length)
 
 
 class TokenizedTaskDataset(Dataset):
@@ -114,6 +157,9 @@ class TokenizedTaskDataset(Dataset):
                 tokenize the dataset
             max_length (int): max length of a sequence
         """
+        self._data = data
+        self._tokenizer = AutoTokenizer.from_pretrained(tokenizer)
+        self._max_length = max_length
 
     def __len__(self) -> int:
         """
@@ -122,6 +168,7 @@ class TokenizedTaskDataset(Dataset):
         Returns:
             int: The number of items in the dataset
         """
+        return len(self._data)
 
     def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
         """
@@ -133,6 +180,8 @@ class TokenizedTaskDataset(Dataset):
         Returns:
             dict[str, torch.Tensor]: An element from the dataset
         """
+        row = self._data.iloc[index]
+        return tokenize_sample(row[ColumnNames.SOURCE.value], self._tokenizer, self._max_length)
 
 
 class LLMPipeline(AbstractLLMPipeline):
@@ -153,6 +202,8 @@ class LLMPipeline(AbstractLLMPipeline):
             batch_size (int): The size of the batch inside DataLoader.
             device (str): The device for inference.
         """
+        super().__init__(model_name, dataset, max_length, batch_size, device)
+        self._model = AutoModelForSequenceClassification.from_pretrained(model_name)
 
     def analyze_model(self) -> dict:
         """
@@ -161,6 +212,24 @@ class LLMPipeline(AbstractLLMPipeline):
         Returns:
             dict: Properties of a model
         """
+        if not isinstance(self._model, torch.nn.Module):
+            return {}
+
+        config = self._model.config
+
+        ids = torch.ones((1, getattr(config, 'max_position_embeddings')), dtype=torch.long, device=self._device)
+        tokens = {'input_ids': ids, 'attention_mask': ids}
+
+        result = summary(self._model, input_data=tokens, device=self._device, verbose=0)
+        return({
+            'input_shape': {k: list(v) for k, v in result.input_size.items()},
+            'embedding_size': config.max_position_embeddings,
+            'output_shape': result.summary_list[-1].output_size,
+            'num_trainable_params': result.trainable_params,
+            'vocab_size': config.vocab_size,
+            'size': result.total_param_bytes,
+            'max_context_length': config.max_length
+        })
 
     @report_time
     def infer_sample(self, sample: tuple[str, ...]) -> str | None:
