@@ -37,9 +37,8 @@ def main() -> None:
 
     preprocessor = RawDataPreprocessor(importer.raw_data)
 
-    result = preprocessor.analyze()
     print('Dataset analysis:')
-    for key, value in result.items():
+    for key, value in preprocessor.analyze().items():
         print(f'{key}: {value}')
 
     preprocessor.transform()
