@@ -6,7 +6,7 @@ Fine-tuning Large Language Models for a downstream task.
 
 # pylint: disable=too-few-public-methods, undefined-variable, duplicate-code, unused-argument, too-many-arguments
 from pathlib import Path
-from typing import Callable, Iterable, Sequence
+from typing import Callable, cast, Iterable, Sequence
 
 import evaluate
 import pandas as pd
@@ -317,6 +317,8 @@ class TaskEvaluator(AbstractTaskEvaluator):
             metrics (Iterable[Metrics]): List of metrics to check
         """
         super().__init__(data_path, metrics)
+        self._data_path = data_path
+        self._metrics = metrics
 
     def run(self) -> dict:
         """
@@ -368,7 +370,7 @@ class SFTPipeline(AbstractSFTPipeline):
         """
         Fine-tune model.
         """
-        model = get_peft_model(self._model, PeftConfig.from_dict(self._lora_config.to_dict()))
+        model = get_peft_model(self._model, cast(PeftConfig, self._lora_config))
 
         finetuned_model_path = str(self._sft_params.finetuned_model_path)
 
