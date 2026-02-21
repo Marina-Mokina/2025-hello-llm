@@ -55,6 +55,13 @@ def main() -> None:
     predictions_path.parent.mkdir(parents=True, exist_ok=True)
     pipeline.infer_dataset().to_csv(predictions_path)
 
+    text, label = dataset[0]
+
+    print('\nModel inference:')
+    print(f'Text: {text}')
+    print(f'Label: {label}')
+    print(f'Predicted: {pipeline.infer_sample((text,))}')
+
     metrics = [Metrics(metric) for metric in settings.parameters.metrics]
     evaluator = TaskEvaluator(BASE_PATH / 'dist' / 'predictions.csv', metrics)
 
