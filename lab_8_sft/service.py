@@ -33,12 +33,18 @@ def init_application() -> tuple:
     Returns:
         tuple: tuple of three objects, instance of FastAPI server, LLMPipeline and SFTPipeline.
     """
-    settings = LabSettings(BASE_PATH / 'settings.json')
     dataset = TaskDataset(pd.DataFrame())
-    model = settings.parameters.model
+    model = LabSettings(BASE_PATH / 'settings.json').parameters.model
 
-    return (FastAPI(), LLMPipeline(model, dataset, 120, 1, 'cpu'),
-            LLMPipeline(str(BASE_PATH / 'dist' / model), dataset, 120, 1, 'cpu'))
+    base = LLMPipeline(model, dataset, 120, 1, 'cpu')
+
+    ft_path = BASE_PATH / 'dist' / model
+    if ft_path.exists():
+        finetuned = LLMPipeline(str(ft_path), dataset, 120, 1, 'cpu')
+    else:
+        finetuned = base
+
+    return FastAPI(), base, finetuned
 
 
 app, base_pipeline, finetuned_pipeline = init_application()
