@@ -36,18 +36,17 @@ def init_application() -> tuple:
     dataset = TaskDataset(pd.DataFrame())
     model_name = LabSettings(BASE_PATH / 'settings.json').parameters.model
 
-    base_pipeline = LLMPipeline(model_name, dataset, 120, 1, 'cpu')
+    base = LLMPipeline(model_name, dataset, 120, 1, 'cpu')
+    ft = base
 
     ft_path = BASE_PATH / 'dist' / model_name
     if ft_path.exists():
-        ft_pipeline = LLMPipeline(str(ft_path), dataset, 120, 1, 'cpu')
-    else:
-        ft_pipeline = base_pipeline
+        ft = LLMPipeline(str(ft_path), dataset, 120, 1, 'cpu')
 
-    return FastAPI(), base_pipeline, ft_pipeline
+    return FastAPI(), base, ft
 
 
-app, base_pipeline, finetuned_pipeline = init_application()
+app, base_pipeline, ft_pipeline = init_application()
 app.mount("/static", StaticFiles(directory=BASE_PATH / 'assets'), name="static")
 
 
@@ -65,6 +64,6 @@ def infer(query: Query) -> dict:
     """
     Main endpoint for model inference.
     """
-    pipeline = base_pipeline if query.use_base else finetuned_pipeline
+    pipeline = base_pipeline if query.use_base else ft_pipeline
     result = pipeline.infer_sample((query.question,))
     return {"infer": result}
