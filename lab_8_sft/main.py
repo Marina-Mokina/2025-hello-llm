@@ -217,6 +217,7 @@ class LLMPipeline(AbstractLLMPipeline):
         self._model = AutoModelForSequenceClassification.from_pretrained(model_name)
         self._tokenizer = AutoTokenizer.from_pretrained(model_name)
         self._model.eval()
+        self._model.to(self._device)
 
     def analyze_model(self) -> dict:
         """
@@ -300,7 +301,7 @@ class LLMPipeline(AbstractLLMPipeline):
 
         predictions = [str(torch.argmax(prediction).item()) for prediction in output.logits]
 
-        return ['0' if label == '2' else '2' if label == '0' else label for label in predictions]
+        return [{'0': '2', '2': '0'}.get(label, label) for label in predictions]
 
 
 class TaskEvaluator(AbstractTaskEvaluator):
